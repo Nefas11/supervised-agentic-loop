@@ -5,11 +5,37 @@ Self-improving AI agent loop with built-in misalignment detection.
 > **Brainstorm → Plan → Implement → Review → Verify → Evolve**
 > — with every tool call monitored for safety.
 
-Combines:
-- **[autoresearch](https://github.com/karpathy/autoresearch)** — autonomous keep/discard experimentation
-- **[governed-agents](https://github.com/senox/governed-agents)** — verification gates + reputation scoring
-- **[self-improving-agent](https://github.com/peterskoett/self-improving-agent)** — persistent learnings across sessions
-- **[OpenAI Agent Monitoring](https://openai.com/index/how-we-monitor-internal-coding-agents-misalignment/)** — two-phase misalignment detection
+Combines best practices from four sources — reimplemented from scratch with zero dependencies:
+
+## Standing on Shoulders
+
+### From [governed-agents](https://github.com/Nefas11/governed-agents)
+The governance layer that makes autonomous agents safe:
+- **4 Verification Gates** — file existence → syntax check → tests pass → lint. Every iteration must pass all gates before a metric is accepted.
+- **EMA Reputation Scoring** — exponential moving average tracks agent trust. Score drops on crashes/hallucinations, rises on success. Three levels: `autonomous` (≥ 0.8), `supervised` (0.2–0.8), `suspended` (≤ 0.2).
+- **Task Contracts** — `TaskContract` with acceptance criteria, required files, and constraints. Agent outputs parse into `TaskResult` with status (`SUCCESS`, `FAILED`, `BLOCKED`).
+- **Agent Suspension** — reputation ≤ 0.2 triggers automatic suspension. Only humans can unsuspend (with audit trail).
+- **Hallucination Detection** — if an agent claims `SUCCESS` but verification gates fail → `IterationHallucination` → heavy reputation penalty.
+
+### From [autoresearch](https://github.com/karpathy/autoresearch)
+The autonomous experimentation engine:
+- **Keep/Discard Loop** — each iteration either improves the metric (KEEP → commit) or doesn't (DISCARD → git rollback). No manual intervention needed.
+- **Metric-Driven** — any command that produces a number can be a metric. 6 built-in parsers + regex fallback.
+- **Plateau Detection** — configurable stagnation patience. N iterations without improvement → auto-brake.
+- **Git Branch Isolation** — each run lives on its own branch. Rollbacks are instant, history is clean.
+
+### From [self-improving-agent](https://github.com/peterskoett/self-improving-agent)
+The memory that makes agents learn:
+- **Persistent Learnings** — insights from every iteration stored in `.state/learnings/*.md`. Survives across runs.
+- **Pattern Detection** — automatic analysis of what worked vs. what didn't. "Area X failed 3 times → avoid" gets fed into brainstorm phase.
+- **Hypothesis Generation** — brainstorm templates produce diverse experiments, informed by past history + learned patterns.
+
+### From [OpenAI Agent Monitoring](https://openai.com/index/how-we-monitor-internal-coding-agents-misalignment/)
+The safety net watching the watcher:
+- **Two-Phase Detection** — synchronous rule-based blocking (< 5ms) for 10 dangerous patterns + async LLM review for subtle misalignment.
+- **10 Misalignment Behaviors** — from restriction bypass (B001) to obfuscation (B010), each with indicators, severity, and block decisions.
+- **Credential Sanitization** — 10 regex patterns redact API keys, tokens, and passwords from all JSONL logs.
+- **Self-Monitoring** — heartbeat pulse + daily canary tests inject known-bad commands and verify detection.
 
 **Zero external dependencies** — only Python 3.11+ stdlib.
 
