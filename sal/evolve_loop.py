@@ -10,6 +10,7 @@ Combines:
 """
 
 import logging
+import shlex
 import signal
 import subprocess
 import time
@@ -467,8 +468,8 @@ class EvolveLoop:
         """Execute the metric command and return output."""
         try:
             proc = subprocess.run(
-                self.config.metric_command,
-                shell=True,
+                shlex.split(self.config.metric_command),
+                shell=False,
                 cwd=self.config.work_dir,
                 capture_output=True,
                 text=True,

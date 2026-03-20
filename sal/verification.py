@@ -9,6 +9,7 @@ No LLM needed. Pure code. 4 gates:
 """
 
 import ast
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,8 +92,8 @@ def verify_tests(
     result = VerificationResult()
     try:
         proc = subprocess.run(
-            test_command,
-            shell=True,
+            shlex.split(test_command),
+            shell=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -144,7 +145,7 @@ def verify_lint(
 
     try:
         proc = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=timeout
+            shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=timeout
         )
         passed = proc.returncode == 0
         output = (proc.stdout + proc.stderr)[-300:]
