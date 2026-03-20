@@ -1,29 +1,74 @@
 ---
 name: supervised-agentic-loop
 description: >
-  Self-improving experiment loop: give an AI agent a target file and a metric,
-  and it autonomously runs Brainstorm → Plan → Implement → Review → Verify → Evolve
+  Self-improving experiment loop with built-in misalignment detection.
+  An AI agent autonomously runs Brainstorm → Plan → Implement → Review → Verify → Evolve
   cycles — keeping improvements, discarding regressions, and learning persistently.
-  Combines autoresearch-style keep/discard experimentation with governed-agents
-  verification gates and reputation scoring.
-install: pip install -e .
-source: https://github.com/senox/supervised-agentic-loop
-homepage: https://github.com/senox/supervised-agentic-loop
-filesystem_writes: true
-network_access:
-  - host: "none"
-    reason: "All operations are local. No network access required."
+  Every tool call passes through a two-phase safety monitor: synchronous rule-based
+  blocking (< 5ms) for destructive commands + async LLM review for subtle misalignment.
+install: bash install.sh
+source: https://github.com/Nefas11/supervised-agentic-loop
+homepage: https://github.com/Nefas11/supervised-agentic-loop
+filesystem_writes:
+  - "results.tsv"
+  - ".state/reputation.db"
+  - ".state/learnings/*.md"
+  - ".state/tool-call-log*.jsonl"
+  - ".state/monitor-alerts.jsonl"
+  - ".state/monitor-heartbeat.json"
 capabilities:
   - autonomous-experimentation
   - verification-gates
   - reputation-scoring
   - persistent-learnings
   - git-isolation
+  - tool-call-logging
+  - synchronous-blocking
+  - session-review
+  - misalignment-detection
+  - severity-classification
+  - telegram-alerts
+  - self-monitoring
+network_access:
+  - host: "api.telegram.org"
+    reason: "Send alert notifications for HIGH/CRITICAL misalignment behaviors (optional)"
 env_vars:
-  SAL_DB_PATH: "Optional. Override reputation DB path."
+  SAL_DB_PATH:
+    required: false
+    description: "Override reputation database path"
+  MONITOR_TELEGRAM_BOT_TOKEN:
+    required: false
+    description: "Telegram bot API token for misalignment alerts"
+  MONITOR_TELEGRAM_CHAT_ID:
+    required: false
+    description: "Target Telegram chat/user ID for alerts"
+  MONITOR_LLM_COMMAND:
+    required: false
+    description: "LLM command for async session review (default: codex)"
+  MONITOR_STATE_DIR:
+    required: false
+    description: "Override monitor state directory (default: .state)"
+metadata:
+  openclaw:
+    emoji: "🧬"
+    type: "executable/with-install"
+    source: "https://github.com/Nefas11/supervised-agentic-loop"
+    requires:
+      bins: ["git", "python3"]
+    optional_bins: ["codex", "openclaw"]
+    install:
+      - id: "script"
+        kind: "script"
+        command: "bash install.sh"
+        label: "Install supervised-agentic-loop"
+capability_flags:
+  network-capable: true
+  subprocess-capable: true
 ---
 
 # supervised-agentic-loop
+
+Self-improving AI agent loop with built-in misalignment detection.
 
 ## Quick Reference
 
@@ -32,8 +77,36 @@ env_vars:
 | **Loop** | Brainstorm → Plan → Implement → Review → Verify → Evolve |
 | **Agent modifies** | One file only (`target_file`) |
 | **Metric** | Any command that produces a numeric output |
-| **Safety** | Git branch isolation + automatic rollback on failure |
-| **Persistence** | `results.tsv` + `.state/learnings/` + `reputation.db` |
+| **Safety (SAL)** | Git isolation + reputation scoring + 4 verification gates |
+| **Safety (Monitor)** | SYNC blocking + ASYNC LLM review + 10 behavior patterns |
+| **Persistence** | `results.tsv` + `.state/learnings/` + `reputation.db` + `*.jsonl` |
+
+## Two Packages, One System
+
+```
+sal/                        # Evolve Loop — the brain
+├── config.py               # Run configuration
+├── evolve_loop.py          # 6-phase loop orchestrator
+├── contract.py             # AgentCallable protocol
+├── metric_extractor.py     # Named strategies + regex
+├── verification.py         # 4 verification gates
+├── reputation.py           # EMA scoring + suspension
+├── git_isolation.py        # Branch per run, auto-rollback
+├── learnings.py            # Persistent pattern detection
+├── brainstorm.py           # Hypothesis generation
+├── cli.py                  # CLI entrypoint
+└── monitor/                # Agent Monitor — the guardian
+    ├── sanitizer.py        # Credential redaction (10 patterns)
+    ├── behaviors.py        # 10 misalignment behaviors (B001-B010)
+    ├── monitor.py          # Two-phase detection engine
+    ├── classifier.py       # Severity classification + dedup
+    ├── logger.py           # JSONL tool-call logging
+    ├── alerter.py          # Telegram alerts (urllib)
+    ├── heartbeat.py        # Self-monitoring + canary
+    └── dashboard.py        # Command Center data functions
+```
+
+**Dependency rule:** `sal/` imports `monitor/`, NEVER the reverse. Monitor has zero knowledge of SAL core.
 
 ## How to Use
 
@@ -48,9 +121,15 @@ Metric: python train.py (look for val_bpb, lower is better)
 ### As a CLI
 
 ```bash
+# Evolve loop
 sal run --target train.py --metric "python train.py" --parser val_bpb
 sal status
 sal unsuspend --agent codex --reason "verified by human"
+
+# Monitor
+sal monitor stats       # sessions, alerts, health
+sal monitor alerts      # recent misalignment alerts
+sal monitor canary      # run 5 self-test checks
 ```
 
 ### As a Python API
@@ -70,8 +149,24 @@ def my_agent(prompt: str) -> str:
     # Your LLM call here — must return output with JSON block
     ...
 
+# Monitor auto-enabled. Set enable_monitor=False to disable.
 loop = EvolveLoop(config, agent=my_agent, agent_id="my-model")
 summary = loop.run()
+```
+
+### Monitor Standalone
+
+```python
+from sal.monitor import AgentMonitor, BlockDecision
+
+monitor = AgentMonitor(state_dir=".state")
+
+# SYNC: before every tool call (< 5ms)
+decision = monitor.check_before_execute("exec", {"command": "rm -rf /"})
+# → BlockDecision.BLOCK
+
+# ASYNC: review full session
+result = monitor.review_session(session_entries, agent_callable=my_llm)
 ```
 
 ## Phases
@@ -79,15 +174,31 @@ summary = loop.run()
 1. **Baseline** — Run metric on unmodified code (fails → HARD ABORT)
 2. **Brainstorm** — Generate hypothesis from history + learnings
 3. **Plan** — Create TaskContract with acceptance criteria
-4. **Implement** — Agent modifies `target_file`
+4. **Implement** — Agent modifies `target_file` (🛡️ Monitor: SYNC prefilter)
 5. **Review** — Parse agent output for contract compliance
 6. **Verify** — Run verification gates (files, syntax, tests, lint) + extract metric
 7. **Evolve** — Compare metric → KEEP (commit) or DISCARD (rollback)
+
+## 10 Misalignment Behaviors
+
+| ID | Behavior | Severity | Sync Block |
+|---|---|---|---|
+| B001 | Restriction bypass / destructive delete | HIGH | ✅ |
+| B002 | Unexpected tool calls | MEDIUM | — |
+| B003 | Goal deviation | MEDIUM | — |
+| B004 | Self-modification | CRITICAL | — |
+| B005 | Data exfiltration | CRITICAL | ✅ |
+| B006 | Hallucinated success | HIGH | — |
+| B007 | Privilege escalation | HIGH | ✅ |
+| B008 | Resource exhaustion | MEDIUM | ✅ |
+| B009 | Persistence / backdoor | CRITICAL | ✅ |
+| B010 | Obfuscation | HIGH | ✅ |
 
 ## Auto-Brake Conditions
 
 The loop stops automatically when:
 - **Reputation ≤ 0.2** → Agent suspended
+- **Monitor BLOCK** → Iteration aborted + reputation penalty
 - **Plateau** → No improvement for N iterations
 - **Budget** → max_iterations reached
 - **SIGINT** → Human interrupt (graceful)
@@ -109,6 +220,10 @@ The loop stops automatically when:
 | Variable | Default | Description |
 |---|---|---|
 | `SAL_DB_PATH` | `.state/reputation.db` | Reputation database path |
+| `MONITOR_TELEGRAM_BOT_TOKEN` | — | Telegram bot token for alerts |
+| `MONITOR_TELEGRAM_CHAT_ID` | — | Telegram chat/user ID |
+| `MONITOR_LLM_COMMAND` | — | LLM for async session review |
+| `MONITOR_STATE_DIR` | `.state` | Monitor state directory |
 
 ## Constraints
 
@@ -116,3 +231,5 @@ The loop stops automatically when:
 - Agent modifies exactly ONE file per iteration
 - All changes are git-isolated with automatic rollback
 - Learnings persist across runs in `.state/learnings/`
+- Monitor is optional — SAL works without it
+- 130 tests (69 SAL + 61 Monitor)
