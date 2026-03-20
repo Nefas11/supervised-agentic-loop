@@ -115,6 +115,46 @@ def cmd_unsuspend(args: argparse.Namespace) -> None:
     print(f"  Reason: {result['reason']}")
 
 
+def cmd_monitor(args: argparse.Namespace) -> None:
+    """Monitor management commands."""
+    try:
+        from sal.monitor.dashboard import get_monitor_stats, get_recent_alerts
+        from sal.monitor.heartbeat import MonitorHeartbeat
+    except ImportError:
+        print("ERROR: sal.monitor is not available")
+        sys.exit(1)
+
+    state_dir = f"{args.work_dir}/.state"
+
+    if args.monitor_action == "stats":
+        stats = get_monitor_stats(state_dir)
+        print(f"Sessions today: {stats['total_sessions_today']}")
+        print(f"Monitor alive: {'✅' if stats['monitor_alive'] else '❌'}")
+        print(f"Last scan: {stats['last_scan'] or 'never'}")
+        print(f"Alerts: {stats['alerts_by_severity']}")
+
+    elif args.monitor_action == "alerts":
+        alerts = get_recent_alerts(state_dir, limit=10)
+        if not alerts:
+            print("No alerts.")
+        else:
+            for a in alerts:
+                print(
+                    f"  [{a['severity']:8s}] {a['behavior_name']} "
+                    f"— {a['evidence'][:60]}"
+                )
+
+    elif args.monitor_action == "canary":
+        hb = MonitorHeartbeat(state_dir=state_dir)
+        result = hb.run_canary()
+        if result["passed"]:
+            print(f"✅ Canary passed: {result['tests_passed']}/{result['tests_run']}")
+        else:
+            print(f"❌ Canary FAILED: {result['tests_passed']}/{result['tests_run']}")
+            for f in result["failures"]:
+                print(f"  ❌ {f['label']}: expected {'BLOCK' if f['expected_block'] else 'ALLOW'}, got {f['actual_decision']}")
+
+
 def main() -> None:
     """CLI main entrypoint."""
     parser = argparse.ArgumentParser(
@@ -148,6 +188,13 @@ def main() -> None:
     unsuspend_parser = sub.add_parser("unsuspend", help="Unsuspend an agent")
     unsuspend_parser.add_argument("--reason", required=True, help="Audit reason")
 
+    # sal monitor
+    monitor_parser = sub.add_parser("monitor", help="Monitor management")
+    monitor_sub = monitor_parser.add_subparsers(dest="monitor_action", required=True)
+    monitor_sub.add_parser("stats", help="Show monitor stats")
+    monitor_sub.add_parser("alerts", help="Show recent alerts")
+    monitor_sub.add_parser("canary", help="Run canary test")
+
     args = parser.parse_args()
 
     # Setup logging
@@ -161,9 +208,11 @@ def main() -> None:
         "run": cmd_run,
         "status": cmd_status,
         "unsuspend": cmd_unsuspend,
+        "monitor": cmd_monitor,
     }
     commands[args.command](args)
 
 
 if __name__ == "__main__":
     main()
+

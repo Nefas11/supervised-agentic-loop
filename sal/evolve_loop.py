@@ -38,6 +38,13 @@ from sal.reputation import (
 from sal.results_log import ResultsLog
 from sal.verification import run_full_verification
 
+# Optional monitor integration — SAL works without it
+try:
+    from sal.monitor import AgentMonitor, BlockDecision
+    _HAS_MONITOR = True
+except ImportError:
+    _HAS_MONITOR = False
+
 logger = logging.getLogger("sal.evolve")
 
 
@@ -60,6 +67,7 @@ class EvolveLoop:
         config: EvolveConfig,
         agent: AgentCallable,
         agent_id: str = "default-agent",
+        enable_monitor: bool = True,
     ) -> None:
         self.config = config
         self.agent = agent
@@ -76,6 +84,13 @@ class EvolveLoop:
         self.results = ResultsLog(work / "results.tsv")
         self.reputation = ReputationDB(str(work / ".state" / "reputation.db"))
         self.learnings = LearningsLog(work / ".state" / "learnings")
+
+        # Monitor integration (optional)
+        self.monitor: Optional["AgentMonitor"] = None
+        if enable_monitor and _HAS_MONITOR:
+            state_dir = str(work / ".state")
+            self.monitor = AgentMonitor(state_dir=state_dir)
+            logger.info("Monitor enabled (sync blocking + session tracking)")
 
         # Register signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self._handle_sigint)
@@ -115,6 +130,11 @@ class EvolveLoop:
                 break
 
             logger.info("=== Iteration %d / %d ===", i, self.config.max_iterations)
+
+            # Hook 3: Monitor session start
+            if self.monitor:
+                from sal.monitor.dashboard import log_alert  # lazy import
+                logger.debug("Monitor: session_start(iteration=%d)", i)
 
             try:
                 # Phase 1: Brainstorm
@@ -292,6 +312,21 @@ class EvolveLoop:
         )
         prompt += "\n\n" + contract.to_prompt()
 
+        # Hook 1: Monitor SYNC prefilter — check prompt before sending
+        if self.monitor:
+            decision = self.monitor.check_before_execute(
+                "agent_call", {"prompt_preview": prompt[:500]}
+            )
+            if decision == BlockDecision.BLOCK:
+                # Hook 2: BLOCK → reputation penalty
+                self.reputation.update(
+                    self.agent_id, 0, SCORE_HALLUCINATION,
+                    status="blocked", hypothesis="Monitor blocked agent call",
+                )
+                raise IterationCrash(
+                    "Monitor BLOCKED agent call — potential misalignment detected"
+                )
+
         # Call agent
         try:
             raw_output = self.agent(prompt)
@@ -300,6 +335,20 @@ class EvolveLoop:
 
         if not raw_output or not raw_output.strip():
             raise IterationCrash("Agent returned empty output")
+
+        # Hook 1: Monitor SYNC prefilter — check agent output
+        if self.monitor:
+            decision = self.monitor.check_before_execute(
+                "agent_output", {"output_preview": raw_output[:1000]}
+            )
+            if decision == BlockDecision.BLOCK:
+                self.reputation.update(
+                    self.agent_id, 0, SCORE_HALLUCINATION,
+                    status="blocked", hypothesis="Monitor blocked agent output",
+                )
+                raise IterationHallucination(
+                    "Monitor BLOCKED agent output — misalignment in response"
+                )
 
         return raw_output
 

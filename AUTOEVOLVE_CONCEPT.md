@@ -1,4 +1,4 @@
-# controlled-agentic-loop — Self-Improving Governed Agent Skill
+# supervised-agentic-loop — Self-Improving Governed Agent Skill
 
 > *Self-improving AI agents. Verified at every step.*
 >
@@ -9,6 +9,7 @@
 ## Problem
 
 Today these three exist in isolation:
+
 1. **autoresearch** — autonomous experiment loop, no verification, no reputation
 2. **governed-agents** — verification + reputation, but single-shot (no iterative self-improvement)
 3. **superpowers-workflow** — orchestrated pipeline, but no autonomous loop mode
@@ -19,16 +20,16 @@ Today these three exist in isolation:
 
 ## DrNeuron Review Resolution Tracker
 
-| Finding | Severity | v0.2 | v0.3 Status |
-|---------|----------|------|-------------|
-| metric_parser format undefined | 🔴 | Open | ✅ Named strategies + regex fallback |
-| metric direction (↑/↓) | 🔴 | Open | ✅ `minimize: bool` in EvolveConfig |
-| Exception handler missing | 🔴 | Open | ✅ try/except in `run()` with IterationError |
-| Plateau N undefined | 🟡 | Open | ✅ `plateau_patience: int = 5` |
-| git submodule vs pip | 🟡 | Open | ✅ pip pinned for install, submodule for dev |
-| suspension_reason / unsuspend | 🟡 | Persistent | ✅ `cal unsuspend --agent <id>` CLI |
-| network_access justification | 🟡 | Not addressed | ✅ Justified below |
-| baseline() documentation | 🟡 | Not addressed | ✅ Documented below |
+| Finding                        | Severity | v0.2          | v0.3 Status                                    |
+| ------------------------------ | -------- | ------------- | ---------------------------------------------- |
+| metric_parser format undefined | 🔴       | Open          | ✅ Named strategies + regex fallback           |
+| metric direction (↑/↓)       | 🔴       | Open          | ✅`minimize: bool` in EvolveConfig           |
+| Exception handler missing      | 🔴       | Open          | ✅ try/except in `run()` with IterationError |
+| Plateau N undefined            | 🟡       | Open          | ✅`plateau_patience: int = 5`                |
+| git submodule vs pip           | 🟡       | Open          | ✅ pip pinned for install, submodule for dev   |
+| suspension_reason / unsuspend  | 🟡       | Persistent    | ✅`cal unsuspend --agent <id>` CLI           |
+| network_access justification   | 🟡       | Not addressed | ✅ Justified below                             |
+| baseline() documentation       | 🟡       | Not addressed | ✅ Documented below                            |
 
 ---
 
@@ -99,6 +100,7 @@ STOP CONDITIONS (all three enforced):
 ### Baseline Phase
 
 `baseline()` runs once before the loop starts:
+
 1. Executes `metric_command` on the unmodified code
 2. Parses the result via `metric_parser` (see Metric Parsing below)
 3. Logs the result as iteration 0 with `status: keep, hypothesis: baseline`
@@ -119,6 +121,7 @@ suspension = {
 ```
 
 To unsuspend (human-only, with audit trail):
+
 ```bash
 cal unsuspend --agent codex-gpt5.2 --reason "Reviewed failures, root cause was OOM not hallucination"
 # → Reputation reset to 0.5 (neutral prior)
@@ -229,6 +232,7 @@ class EvolveLoop:
 Hypothesis generation using past results (TSV history analysis).
 
 Key function:
+
 - `generate_hypothesis(results_history, target_file)` → produces a structured hypothesis with expected improvement, risk level, and code change description.
 
 ---
@@ -238,6 +242,7 @@ Key function:
 TSV-based experiment logging (inspired by autoresearch `results.tsv`).
 
 Format:
+
 ```
 iteration	commit	metric_value	memory_mb	status	hypothesis	duration_s	reputation
 1	a1b2c3d	0.997900	44000	keep	baseline	305	0.500
@@ -250,6 +255,7 @@ iteration	commit	metric_value	memory_mb	status	hypothesis	duration_s	reputation
 #### [NEW] `cal/git_isolation.py`
 
 Git branch management for safe experimentation:
+
 - `create_evolve_branch(tag)` — creates `cal/{tag}` from current HEAD
 - `commit_experiment(message)` — commits current changes
 - `rollback()` — `git reset --hard` to last known good commit
@@ -260,6 +266,7 @@ Git branch management for safe experimentation:
 #### [NEW] `cal/config.py`
 
 Configuration schema:
+
 ```python
 @dataclass
 class EvolveConfig:
@@ -318,6 +325,7 @@ def get_parser(spec: str) -> Callable[[str], float]:
 ```
 
 **Usage examples:**
+
 ```python
 # Named strategy
 EvolveConfig(metric_parser="pytest_passed", minimize=False)  # more passed = better
@@ -335,14 +343,15 @@ EvolveConfig(metric_parser=r"F1 score: ([\d.]+)", minimize=False)
 
 **Decision: pip with pinned version** for `install.sh`. Git submodule only for dev/contributor setup.
 
-| Dependency | Source | Production | Dev |
-|-----------|--------|-----------|-----|
-| `governed_agents.contract` | governed-agents | `pip install governed-agents==0.4.2` | git submodule |
-| `governed_agents.orchestrator` | governed-agents | (same package) | git submodule |
-| `governed_agents.verifier` | governed-agents | (same package) | git submodule |
-| `governed_agents.reputation` | governed-agents | (same package) | git submodule |
+| Dependency                       | Source          | Production                             | Dev           |
+| -------------------------------- | --------------- | -------------------------------------- | ------------- |
+| `governed_agents.contract`     | governed-agents | `pip install governed-agents==0.4.2` | git submodule |
+| `governed_agents.orchestrator` | governed-agents | (same package)                         | git submodule |
+| `governed_agents.verifier`     | governed-agents | (same package)                         | git submodule |
+| `governed_agents.reputation`   | governed-agents | (same package)                         | git submodule |
 
 `install.sh` will:
+
 ```bash
 # Production install: pinned pip dependency
 pip install governed-agents==0.4.2
@@ -355,18 +364,19 @@ pip install -e ./governed-agents
 
 ## Platform Compatibility
 
-| Platform | Support |
-|----------|---------|
-| **OpenClaw** | ✅ via SKILL.md + `sessions_spawn` |
-| **Antigravity** | ✅ via MCP task + `program.md`-style instructions |
-| **Claude Code** | ✅ via `program.md`-style prompt + CLI |
-| **Codex CLI** | ✅ individual experiments via `codex --task` |
+| Platform              | Support                                            |
+| --------------------- | -------------------------------------------------- |
+| **OpenClaw**    | ✅ via SKILL.md +`sessions_spawn`                |
+| **Antigravity** | ✅ via MCP task +`program.md`-style instructions |
+| **Claude Code** | ✅ via `program.md`-style prompt + CLI           |
+| **Codex CLI**   | ✅ individual experiments via `codex --task`     |
 
 ---
 
 ## Formal Model
 
 ### Evolution Function
+
 ```
 E(i) = Brainstorm(H) → Plan(C) → Implement(A) → Review(R) → Verify(V) → Evolve(Δ)
 
@@ -387,6 +397,7 @@ where:
 ```
 
 ### Auto-Brake (from governed-agents)
+
 ```
 STOP if R(t) ≤ 0.2                              (suspended — logged with reason)
 STOP if i ≥ max_iterations                       (budget exhausted)
@@ -422,16 +433,16 @@ python3 -m pytest governed_agents/test_verification.py -v
 
 ## Comparison: What Each Repo Contributes
 
-| Capability | autoresearch | governed-agents | superpowers-workflow | **controlled-agentic-loop** |
-|-----------|:---:|:---:|:---:|:---:|
-| Autonomous loop | ✅ | ❌ | ❌ | ✅ |
-| Verification gates | ❌ | ✅ | ✅ | ✅ |
-| Reputation scoring | ❌ | ✅ | ✅ | ✅ |
-| Git-based rollback | ✅ | ❌ | ❌ | ✅ |
-| Experiment TSV log | ✅ | ❌ | ❌ | ✅ |
-| 5-phase pipeline | ❌ | ❌ | ✅ | ✅ |
-| Council review | ❌ | ✅ | ⚠️ | ✅ |
-| Auto-brake (supervision) | ❌ | ✅ | ✅ | ✅ |
-| Multi-platform skill | ❌ | ✅ | ✅ | ✅ |
-| Hypothesis generation | ❌ | ❌ | ❌ | ✅ (new) |
-| Plateau detection | ❌ | ❌ | ❌ | ✅ (new) |
+| Capability               | autoresearch | governed-agents | superpowers-workflow | **controlled-agentic-loop** |
+| ------------------------ | :----------: | :-------------: | :------------------: | :-------------------------------: |
+| Autonomous loop          |      ✅      |       ❌       |          ❌          |                ✅                |
+| Verification gates       |      ❌      |       ✅       |          ✅          |                ✅                |
+| Reputation scoring       |      ❌      |       ✅       |          ✅          |                ✅                |
+| Git-based rollback       |      ✅      |       ❌       |          ❌          |                ✅                |
+| Experiment TSV log       |      ✅      |       ❌       |          ❌          |                ✅                |
+| 5-phase pipeline         |      ❌      |       ❌       |          ✅          |                ✅                |
+| Council review           |      ❌      |       ✅       |         ⚠️         |                ✅                |
+| Auto-brake (supervision) |      ❌      |       ✅       |          ✅          |                ✅                |
+| Multi-platform skill     |      ❌      |       ✅       |          ✅          |                ✅                |
+| Hypothesis generation    |      ❌      |       ❌       |          ❌          |             ✅ (new)             |
+| Plateau detection        |      ❌      |       ❌       |          ❌          |             ✅ (new)             |
