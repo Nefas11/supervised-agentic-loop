@@ -23,3 +23,6 @@ Thumbs.db
 .state/
 results.tsv
 reputation.db
+
+# Local agent config (not part of the skill)
+.agent/
