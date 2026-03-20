@@ -18,7 +18,7 @@ The governance layer that makes autonomous agents safe:
 - **Hallucination Detection** — if an agent claims `SUCCESS` but verification gates fail → `IterationHallucination` → heavy reputation penalty.
 
 ### From [autoresearch](https://github.com/karpathy/autoresearch)
-The autonomous experimentation engine:
+The autonomous evolution engine:
 - **Keep/Discard Loop** — each iteration either improves the metric (KEEP → commit) or doesn't (DISCARD → git rollback). No manual intervention needed.
 - **Metric-Driven** — any command that produces a number can be a metric. 6 built-in parsers + regex fallback.
 - **Plateau Detection** — configurable stagnation patience. N iterations without improvement → auto-brake.
@@ -28,7 +28,7 @@ The autonomous experimentation engine:
 The memory that makes agents learn:
 - **Persistent Learnings** — insights from every iteration stored in `.state/learnings/*.md`. Survives across runs.
 - **Pattern Detection** — automatic analysis of what worked vs. what didn't. "Area X failed 3 times → avoid" gets fed into brainstorm phase.
-- **Hypothesis Generation** — brainstorm templates produce diverse experiments, informed by past history + learned patterns.
+- **Hypothesis Generation** — brainstorm templates produce diverse hypotheses, informed by past history + learned patterns.
 
 ### From [OpenAI Agent Monitoring](https://openai.com/index/how-we-monitor-internal-coding-agents-misalignment/)
 The safety net watching the watcher:
@@ -175,7 +175,7 @@ logger.debug("Monitor: session_start(iteration=%d)", i)
 - **Git isolation** — every run on its own branch, auto-rollback on failure
 - **Reputation scoring** — EMA-based, agents get suspended at ≤ 0.2
 - **4 verification gates** — files exist, syntax, tests pass, lint
-- **Persistent learnings** — avoid repeating the same failed experiments
+- **Persistent learnings** — avoid repeating the same failed approaches
 - **SYNC blocking** — dangerous commands blocked before execution (< 5ms)
 - **ASYNC LLM review** — deep misalignment detection on full sessions
 - **Credential sanitization** — 10 patterns redacted from all JSONL logs

@@ -1,7 +1,7 @@
 ---
 name: supervised-agentic-loop
 description: >
-  Self-improving experiment loop with built-in misalignment detection.
+  Self-improving AI agent loop with built-in misalignment detection.
   An AI agent autonomously runs Brainstorm → Plan → Implement → Review → Evolve
   cycles — keeping improvements, discarding regressions, and learning persistently.
   Includes a synchronous rule-based prefilter that blocks destructive commands
@@ -18,7 +18,7 @@ filesystem_writes:
   - ".state/monitor-alerts.jsonl"
   - ".state/monitor-heartbeat.json"
 capabilities:
-  - autonomous-experimentation
+  - autonomous-evolution
   - verification-gates
   - reputation-scoring
   - persistent-learnings
@@ -117,7 +117,7 @@ sal/                        # Evolve Loop — the brain
 ### As a Skill (in your agent instructions)
 
 ```markdown
-Read the SKILL.md in supervised-agentic-loop/ and begin an experiment run.
+Read the SKILL.md in supervised-agentic-loop/ and begin an evolve run.
 Target file: train.py
 Metric: python train.py (look for val_bpb, lower is better)
 ```
