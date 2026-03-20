@@ -2,10 +2,11 @@
 name: supervised-agentic-loop
 description: >
   Self-improving experiment loop with built-in misalignment detection.
-  An AI agent autonomously runs Brainstorm → Plan → Implement → Review → Verify → Evolve
+  An AI agent autonomously runs Brainstorm → Plan → Implement → Review → Evolve
   cycles — keeping improvements, discarding regressions, and learning persistently.
-  Every tool call passes through a two-phase safety monitor: synchronous rule-based
-  blocking (< 5ms) for destructive commands + async LLM review for subtle misalignment.
+  Includes a synchronous rule-based prefilter that blocks destructive commands
+  before execution, and an optional async LLM review for subtle misalignment.
+  All operations are LOCAL by default — network access is opt-in via env vars.
 install: bash install.sh
 source: https://github.com/Nefas11/supervised-agentic-loop
 homepage: https://github.com/Nefas11/supervised-agentic-loop
@@ -24,27 +25,29 @@ capabilities:
   - git-isolation
   - tool-call-logging
   - synchronous-blocking
-  - session-review
   - misalignment-detection
   - severity-classification
-  - telegram-alerts
   - self-monitoring
 network_access:
   - host: "api.telegram.org"
-    reason: "Send alert notifications for HIGH/CRITICAL misalignment behaviors (optional)"
+    reason: "OPTIONAL — only if MONITOR_TELEGRAM_BOT_TOKEN is set. Sends alert notifications for HIGH/CRITICAL misalignment behaviors via HTTPS POST."
+    optional: true
+  - host: "user-configured"
+    reason: "OPTIONAL — MONITOR_LLM_COMMAND runs a LOCAL subprocess (e.g. 'codex'). The subprocess itself may make network calls depending on user configuration. SAL code does NOT make any direct network calls beyond Telegram."
+    optional: true
 env_vars:
   SAL_DB_PATH:
     required: false
-    description: "Override reputation database path"
+    description: "Override reputation database path (default: .state/reputation.db)"
   MONITOR_TELEGRAM_BOT_TOKEN:
     required: false
-    description: "Telegram bot API token for misalignment alerts"
+    description: "Telegram bot API token. If unset, no Telegram calls are made."
   MONITOR_TELEGRAM_CHAT_ID:
     required: false
-    description: "Target Telegram chat/user ID for alerts"
+    description: "Target Telegram chat/user ID. Required together with BOT_TOKEN."
   MONITOR_LLM_COMMAND:
     required: false
-    description: "LLM command for async session review (default: codex)"
+    description: "LOCAL subprocess command for async review (e.g. 'codex'). Runs locally — SAL does not control its network behavior."
   MONITOR_STATE_DIR:
     required: false
     description: "Override monitor state directory (default: .state)"
@@ -57,13 +60,14 @@ metadata:
       bins: ["git", "python3"]
     optional_bins: ["codex", "openclaw"]
     install:
-      - id: "script"
+      - id: "pip-editable"
         kind: "script"
         command: "bash install.sh"
-        label: "Install supervised-agentic-loop"
+        label: "Install supervised-agentic-loop (pip install -e .)"
 capability_flags:
   network-capable: true
   subprocess-capable: true
+  network-default-off: true
 ---
 
 # supervised-agentic-loop
