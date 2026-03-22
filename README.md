@@ -5,6 +5,8 @@ Self-improving AI agent loop with built-in misalignment detection.
 > **Brainstorm → Plan → Implement → Review → Verify → Evolve**
 > — with every tool call monitored for safety.
 
+**Compatible with:** OpenClaw · Antigravity · Claude Code
+
 Combines best practices from four sources — reimplemented from scratch with zero dependencies:
 
 ## Standing on Shoulders
