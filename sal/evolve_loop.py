@@ -26,6 +26,7 @@ from sal.exceptions import (
     IterationHallucination,
     MetricParseError,
 )
+from sal.event_logger import EventLogger
 from sal.git_isolation import GitIsolation
 from sal.learnings import LearningsLog
 from sal.metric_extractor import extract_metric
@@ -85,6 +86,7 @@ class EvolveLoop:
         self.results = ResultsLog(work / "results.tsv")
         self.reputation = ReputationDB(str(work / ".state" / "reputation.db"))
         self.learnings = LearningsLog(work / ".state" / "learnings")
+        self.event_logger = EventLogger(str(work / ".state" / "events.db"))
 
         # Monitor integration (optional)
         self.monitor: Optional["AgentMonitor"] = None
@@ -231,6 +233,7 @@ class EvolveLoop:
 
         logger.info("Run complete: %s", summary)
         self.reputation.close()
+        self.event_logger.close()
         return summary
 
     def _baseline(self) -> float:
@@ -240,6 +243,7 @@ class EvolveLoop:
             BaselineCrashError: HARD ABORT if baseline fails.
         """
         logger.info("Phase 0: Baseline measurement")
+        self.event_logger.log_event("baseline", {"status": "started"})
         try:
             output = self._run_metric_command()
             metric = extract_metric(output, self.config.metric_parser)
@@ -262,11 +266,13 @@ class EvolveLoop:
         )
         self.git.mark_good()
         logger.info("Baseline metric: %.6f (commit: %s)", metric, sha)
+        self.event_logger.log_event("baseline", {"status": "complete"})
         return metric
 
     def _brainstorm(self) -> dict:
         """Phase 1: Generate next hypothesis."""
         logger.info("Phase 1: Brainstorm")
+        self.event_logger.log_event("brainstorm", {"status": "started"})
         patterns = self.learnings.get_patterns()
         hypothesis = generate_hypothesis(
             results_history=self.results.history,
@@ -275,12 +281,14 @@ class EvolveLoop:
         )
         logger.info("Hypothesis: %s (area: %s, risk: %s)",
                      hypothesis["description"], hypothesis["area"], hypothesis["risk"])
+        self.event_logger.log_event("brainstorm", {"status": "complete"})
         return hypothesis
 
     def _plan(self, hypothesis: dict) -> TaskContract:
         """Phase 2: Create a task contract from the hypothesis."""
         logger.info("Phase 2: Plan (contract)")
-        return TaskContract(
+        self.event_logger.log_event("plan", {"status": "started"})
+        contract = TaskContract(
             objective=hypothesis["description"],
             acceptance_criteria=[
                 f"Modify {self.config.target_file} to implement: {hypothesis['description']}",
@@ -296,10 +304,13 @@ class EvolveLoop:
             ],
             timeout_seconds=self.config.time_budget,
         )
+        self.event_logger.log_event("plan", {"status": "complete"})
+        return contract
 
     def _implement(self, contract: TaskContract, hypothesis: dict) -> str:
         """Phase 3: Call the agent to implement the hypothesis."""
         logger.info("Phase 3: Implement (agent call)")
+        self.event_logger.log_event("implement", {"status": "started"})
 
         # Read current target file content
         target = Path(self.config.work_dir) / self.config.target_file
@@ -351,11 +362,13 @@ class EvolveLoop:
                     "Monitor BLOCKED agent output — misalignment in response"
                 )
 
+        self.event_logger.log_event("implement", {"status": "complete"})
         return raw_output
 
     def _review(self, agent_output: str, contract: TaskContract) -> None:
         """Phase 4: Lightweight review — parse agent result."""
         logger.info("Phase 4: Review")
+        self.event_logger.log_event("review", {"status": "started"})
         result = TaskResult.from_agent_output(agent_output, contract.task_id)
 
         if not result.parse_success:
@@ -373,6 +386,8 @@ class EvolveLoop:
         if result.status == TaskStatus.SUCCESS:
             logger.info("Agent claims SUCCESS — verifying...")
 
+        self.event_logger.log_event("review", {"status": "complete"})
+
     def _verify(self, contract: TaskContract) -> float:
         """Phase 5: Run verification gates + extract metric.
 
@@ -381,6 +396,7 @@ class EvolveLoop:
             IterationCrash: If metric extraction fails.
         """
         logger.info("Phase 5: Verify")
+        self.event_logger.log_event("verify", {"status": "started"})
 
         # Gate checks
         vresult = run_full_verification(
@@ -396,7 +412,9 @@ class EvolveLoop:
         # Extract metric
         try:
             output = self._run_metric_command()
-            return extract_metric(output, self.config.metric_parser)
+            metric = extract_metric(output, self.config.metric_parser)
+            self.event_logger.log_event("verify", {"status": "complete"})
+            return metric
         except MetricParseError as e:
             raise IterationCrash(f"Metric extraction failed: {e}") from e
 
@@ -404,6 +422,7 @@ class EvolveLoop:
         """Phase 6: Keep or discard based on metric comparison."""
         logger.info("Phase 6: Evolve (metric=%.6f, best=%.6f)",
                      metric_value, self.best_metric or 0.0)
+        self.event_logger.log_event("evolve", {"status": "started"})
 
         improved = self._is_improved(metric_value)
         metric_before = self.best_metric or metric_value
@@ -455,6 +474,8 @@ class EvolveLoop:
             )
             logger.info("❌ DISCARD — no improvement (stagnation: %d/%d)",
                          self.stagnation, self.config.plateau_patience)
+
+        self.event_logger.log_event("evolve", {"status": "complete"})
 
     def _is_improved(self, new_metric: float) -> bool:
         """Check if new metric is better than best, respecting direction."""
