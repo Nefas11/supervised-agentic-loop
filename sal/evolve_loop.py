@@ -1,5 +1,5 @@
 from sal.load_env import load_sal_env
-nload_sal_env()  # Auto-load SAL environment
+load_sal_env()  # Auto-load SAL environment
 """Main evolution loop — the heart of supervised-agentic-loop.
 
 Combines:
